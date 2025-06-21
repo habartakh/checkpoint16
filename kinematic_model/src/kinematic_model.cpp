@@ -13,14 +13,25 @@ using namespace std::chrono_literals;
 class KinematicModel : public rclcpp::Node {
 public:
   KinematicModel() : Node("kinematic_model") {
+
+    sub_callback_group_ = this->create_callback_group(
+        rclcpp::CallbackGroupType::MutuallyExclusive);
+    rclcpp::SubscriptionOptions options1;
+    options1.callback_group = sub_callback_group_;
+
     wheel_vel_sub = this->create_subscription<std_msgs::msg::Float32MultiArray>(
         "wheel_speed", 10,
-        std::bind(&KinematicModel::wheel_vel_sub_callback, this, _1));
+        std::bind(&KinematicModel::wheel_vel_sub_callback, this, _1), options1);
 
+    timer_callback_group_ = this->create_callback_group(
+        rclcpp::CallbackGroupType::MutuallyExclusive);
     twist_pub =
         this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
     twist_timer = this->create_wall_timer(
-        500ms, std::bind(&KinematicModel::twist_timer_callback, this));
+        100ms, std::bind(&KinematicModel::twist_timer_callback, this),
+        timer_callback_group_);
+
+    RCLCPP_INFO(this->get_logger(), "Initialized kinematic model node");
   }
 
 private:
@@ -30,19 +41,16 @@ private:
   }
 
   void twist_timer_callback() {
-    // Publish the Twist message to move the robot
-    wheelvel_to_twist();
-    
-    // std::cout << "current_twist.angular.z : " << current_twist.angular.z
-    //           << std::endl;
 
-    // std::cout << " current_twist.linear.x : " << current_twist.linear.x
-    //           << std::endl;
+    if (!current_wheel_velocities.empty()) {
+      // Publish the Twist message to move the robot
+      wheelvel_to_twist();
 
-    // std::cout << " current_twist.linear.y :" << current_twist.linear.y
-    //           << std::endl;
-
-    twist_pub->publish(current_twist);
+      twist_pub->publish(current_twist);
+    } else {
+      RCLCPP_INFO(this->get_logger(),
+                  "Waiting for a valid wheel velocities message...");
+    }
   }
 
   // Implement the kinematic model of an holonomic robot
@@ -64,10 +72,18 @@ private:
     current_twist.angular.z = twist(0, 0);
     current_twist.linear.x = twist(1, 0);
     current_twist.linear.y = twist(2, 0);
+
+    // RCLCPP_INFO(this->get_logger(),
+    //             "Twist → linear.x: %.3f, linear.y: %.3f, angular.z: %.3f",
+    //             current_twist.linear.x, current_twist.linear.y,
+    //             current_twist.angular.z);
   }
 
   rclcpp::Subscription<std_msgs::msg::Float32MultiArray>::SharedPtr
       wheel_vel_sub;
+  rclcpp::CallbackGroup::SharedPtr sub_callback_group_;
+
+  rclcpp::CallbackGroup::SharedPtr timer_callback_group_;
   rclcpp::TimerBase::SharedPtr twist_timer;
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr twist_pub;
 
@@ -81,7 +97,14 @@ private:
 
 int main(int argc, char *argv[]) {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<KinematicModel>());
+
+  std::shared_ptr<KinematicModel> kinematic_model =
+      std::make_shared<KinematicModel>();
+
+  rclcpp::executors::MultiThreadedExecutor executor;
+  executor.add_node(kinematic_model);
+  executor.spin();
+
   rclcpp::shutdown();
   return 0;
 }
