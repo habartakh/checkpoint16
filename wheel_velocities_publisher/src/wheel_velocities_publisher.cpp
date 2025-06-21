@@ -8,7 +8,7 @@
 
 using namespace std::chrono_literals;
 
-enum MotionType {
+enum MotionType { // To be executed by the rosbot
   FORWARD,
   BACKWARD,
   LEFT,
@@ -17,6 +17,7 @@ enum MotionType {
   CONTER_CLOCKWISE,
   STOP
 };
+
 // Overload the ++ operator for enum to increment the motion types
 // source: https://cplusplus.com/forum/beginner/41790/
 inline MotionType &operator++(MotionType &eDOW, int) {
@@ -49,31 +50,24 @@ private:
     set_wheel_speeds();
 
     if (current_motion_index < 7) {
-      //   std::cout << "current_motion_index : " << current_motion_index
-      //             << std::endl;
-
+      // Publish each wheel vel message for  3 seconds
       if (same_msg_index < 6) {
-
-        // std::cout << "same_msg_index : " << same_msg_index << std::endl;
-        // std::cout << "motion_type : " << motion_type << std::endl;
 
         publisher_->publish(wheel_speed_msg);
         same_msg_index++;
       } else {
         // Reset the same_msg_index for the following motion
         same_msg_index = 0;
-        // Then update the motion to execute next
+        // Then update the motion index to execute the next one
         ++current_motion_index;
         motion_type++;
       }
-
-    }
-
-    else {
+    } else {
       timer_->cancel();
     }
   }
 
+  // Set the correct wheel speends depending on the motion wanted
   void set_wheel_speeds() {
 
     switch (motion_type) {
@@ -120,7 +114,7 @@ private:
 
   enum MotionType motion_type;
   std_msgs::msg::Float32MultiArray wheel_speed_msg;
-  // Each motion's index between (0 & 7)
+  // Each motion's index is between 0 & 7
   int current_motion_index = 0;
   int same_msg_index = 0;
 };

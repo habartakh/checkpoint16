@@ -47,6 +47,8 @@ public:
     twist_timer = this->create_wall_timer(
         100ms, std::bind(&EightTrajectory::wheel_vel_timer_callback, this),
         timer_callback_group_);
+
+    RCLCPP_INFO(this->get_logger(), "Initialized eight trajectory node");
   }
 
 private:
@@ -65,15 +67,16 @@ private:
   }
 
   void wheel_vel_timer_callback() {
-    if (current_motion_index >= waypoints_traj.size()) {
-      // Trajectory complete
+
+    // If the robot has completed its trajectory, stop
+    if (current_motion_index >= 8) {
       wheel_speed_msg.data = {0, 0, 0, 0};
       wheel_vel_pub->publish(wheel_speed_msg);
       twist_timer->cancel();
       return;
     }
 
-    same_motion_duration = 30;
+    same_motion_duration = 30; // 30 * 0.100 = 3 seconds
 
     if (current_state == MOVING) {
       // Get current waypoint
@@ -88,86 +91,29 @@ private:
       wheel_vel_pub->publish(wheel_speed_msg);
       same_motion_index++;
 
-      if (same_motion_index >=
-          same_motion_duration) { // 5 seconds (if timer = 100ms)
+      // Stop the robot for a bit after reaching each waypoint
+      if (same_motion_index >= same_motion_duration) {
         current_state = STOPPING;
         same_motion_index = 0;
-        std::cout << ">>> Transitioning to STOPPING state <<<" << std::endl;
+        // RCLCPP_INFO(this->get_logger(), "Stopping the robot for 3 seconds");
       }
     }
 
+    // Stop the robot for 3 seconds
     else if (current_state == STOPPING) {
       std_msgs::msg::Float32MultiArray stop_message;
       stop_message.data = {0, 0, 0, 0};
       wheel_vel_pub->publish(stop_message);
 
       stop_motion_index++;
-      if (stop_motion_index >= 30) { // 2 seconds (if timer = 100ms)
+
+      // Then start heading to the next waypoint
+      if (stop_motion_index >= same_motion_duration) {
         stop_motion_index = 0;
         current_motion_index++;
         current_state = MOVING;
-        std::cout << ">>> Proceeding to next waypoint <<<" << std::endl;
+        RCLCPP_INFO(this->get_logger(), "Proceeding to the next waypoint");
       }
-    }
-  }
-
-  void wheel_vel_timer_callback_old() {
-
-    if (current_motion_index < waypoints_traj.size()) {
-
-      // Set the current waypoint
-      WayPoint current_waypoint = waypoints_traj.at(current_motion_index);
-
-      /* std::cout << "current_waypoint : " << current_waypoint.dphi << " ,"
-                 << current_waypoint.dx << " ," << current_waypoint.dy
-                 << std::endl;*/
-
-      // Get the necessary wheel velocities to go to that waypoint
-      auto twist = velocity_to_twist(current_waypoint.dphi, current_waypoint.dx,
-                                     current_waypoint.dy);
-      twist_to_wheels(twist);
-
-      // Publish the path to the same waypoint for 10 * 0.5 = 3 seconds
-      if (same_motion_index < 50) {
-
-        // std::cout << "Same motion index : " << same_motion_index <<
-        // std::endl;
-
-        wheel_vel_pub->publish(wheel_speed_msg);
-        same_motion_index++;
-      }
-
-      else {
-        // Stop for a moment
-
-        if (stop_motion_index < 20) {
-          std_msgs::msg::Float32MultiArray stop_message;
-          stop_message.data = {0, 0, 0, 0};
-          wheel_vel_pub->publish(stop_message);
-
-          stop_motion_index++;
-          std::cout << "Stopping for 2 seconds" << std::endl;
-        }
-
-        else {
-          // Reset the same_motion_index for the following motion
-          same_motion_index = 0;
-          stop_motion_index = 0;
-          // Then update the motion to execute next
-          ++current_motion_index;
-          RCLCPP_INFO(this->get_logger(),
-                      "######################################");
-          std::cout << "Changed Waypoint!!" << std::endl;
-          RCLCPP_INFO(this->get_logger(),
-                      "######################################");
-        }
-      }
-    }
-
-    else {
-      wheel_speed_msg.data = {0, 0, 0, 0};
-      wheel_vel_pub->publish(wheel_speed_msg);
-      twist_timer->cancel();
     }
   }
 
@@ -233,6 +179,7 @@ private:
   // Messsage containing the wheel speeds to be published
   std_msgs::msg::Float32MultiArray wheel_speed_msg;
 
+  // iterations of each motion executed by the robot
   int current_motion_index = 0;
   int same_motion_index = 0;
   int stop_motion_index = 0;
